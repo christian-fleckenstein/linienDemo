@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linien Demo</title>
+    <style>
+    #board {
+        display: grid;
+        grid-template-columns: repeat(16, 42px);
+        grid-template-rows: repeat(16, 42px);
+        gap: 2px;
+    }
+    .square {
+        width: 40px;
+        height: 40px;
+        background-color: #eee;
+        border: 1px solid #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .square.active {
+        background-color: #0e04ca;
+        border: 1px solid #0c0c0c;
+    }
+    .square.activepot {
+        background-color: #2275bb;
+        border: 1px solid #0c0c0c;
+    }
+    .square.pot {
+        background-color: #43b89f;
+        border: 1px solid #0c0c0c;
+    }
+    .cursor {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background-color:  rgba(175, 163, 76, 0.5);
+        color: white;
+        text-align: center;
+        line-height: 40px;
+        position: absolute;
+        left:-13px;
+        top:+83px;
+        transition: transform 0.3s;  
+    }
+
+    .cursor.ready {
+        background-color:  rgba(17, 255, 0, 0.5);
+        transition: transform 0.3s;  
+    }
+    .cursor.searching {
+        background-color:  rgba(157, 157, 157, 0.5);
+        transition: transform 0.3s;  
+    }
+    
+    .direction {
+        width: 210px;
+        height: 40px;
+        border-radius: 5%;
+        background-color:  rgba(60, 167, 192, 0.5);
+        position: absolute;
+        transform-origin: center;
+        left:-63px;
+        top:19px;
+        transition: transform 0.3s;
+        transform: translateX(0px) translateY(0px) rotate(0deg);
+    }
+    .down {
+        transform: translateX(-85px);
+        transform: rotate(90deg);
+    }
+    .right {
+        transform: translateX(-85px);
+        transform: rotate(0deg);
+    }
+    .falling {
+        transform: translateX(-85px);
+        transform: rotate(45deg);
+    }
+    .ascending {
+        transform: translateX(-85px);
+        transform: rotate(-45deg);
+    }
+
+    .move {
+        width: 210px;
+        height: 10px;
+        border-radius: 5%;
+        background-color:  rgba(60, 167, 192, 0.5);
+        position: absolute;
+        transform-origin: center;        
+        transition: transform 0.3s;
+    }
+
+    </style>
+</head>
+<body>
+    <h1>Linien Demo</h1>
+    <div>
+        <input type="button" value="activate selected move" id="doIt"/>
+        <div id="Moves"/>
+    </div>
+    <div id='table'>
+        <div id="board">
+            <div class="cursor" id="Cursor">
+                <div class="direction right" id="Dir" />
+            </div>
+
+        </div>
+        
+    </div>
+
+    <script>
+        // data structures
+        const tiles = Array.from({ length: 256 }, () =>({}) );
+        const idsOnStart = [55,56,57,58,71,74,87,90,100,101,102,103,106,107,108,109,116,125,132,141,148,149,150,151,154,155,156,157,167,170,183,186,199,200,201,202];
+        const moves = [{x:7, y:7, r:0, type:'next'}];
+
+        const htmlMoves = document.getElementById('Moves');
+
+        const button = document.getElementById('doIt');
+        button.addEventListener('click', () => {
+                executeMove();
+                refreshBoard();
+            });
+
+
+        // HTML Elements
+        const board = document.getElementById('board');
+        // initialize and link
+        for (let i = 0; i < 256; i++) {
+            tiles[i].linksFree = [true, true, true, true];
+            if (idsOnStart.includes(i+1))
+                tiles[i].active = 1;
+            else
+                tiles[i].active = 0;
+        }
+
+
+        for (let i = 0; i < 256; i++) {
+            const square = document.createElement('div');
+            square.setAttribute('id', i);
+            pot = potentialMove(i);
+
+            if (tiles[i].active>0) {
+                if (pot)
+                    square.className = 'square activepot';
+                else 
+                    square.className = 'square active';
+            } else {
+                if (pot)
+                    square.className = 'square pot';
+                else 
+                    square.className = 'square';
+            }
+            board.appendChild(square);
+        }
+        const squares = document.querySelectorAll('.square');
+        squares.forEach(square => {
+            square.addEventListener('click', () => {
+                const position = square.getAttribute('id');
+                moveCursorToPosition(position);
+            });
+        });
+        const cursor = document.getElementById('Cursor');
+        const dir = document.getElementById('Dir');
+        dir.addEventListener('click', () => {
+            moves[0].r = (moves[0].r +1)  % 4;
+            switch (moves[0].r) {
+                case 0: dir.className = 'direction right'; break;
+                case 1: dir.className = 'direction down'; break;
+                case 2: dir.className = 'direction falling'; break;
+                case 3: dir.className = 'direction ascending'; break;
+                default: break;
+            }
+            if (validMove(moves[0].x + moves[0].y * 16, moves[0].r))
+            {
+                cursor.className = 'cursor ready';
+            } else {
+                cursor.className = 'cursor searching';
+            }
+        });
+
+
+        function potentialMove(pos) {
+            if (
+                validMove(pos, 0) 
+                ||validMove(pos, 1) 
+                ||validMove(pos, 2) 
+                ||validMove(pos, 3))
+                return true;
+            return false;
+        }
+
+        function validMove(pos, r) {
+            // good enough for demo, dont exclude moves based on position otherwise:
+            x = pos%16;
+            y = pos>>4;
+            if (x < 2 || x > 13 || y < 2 || y > 13 ) return false;
+            switch (r) {
+                case 0: 
+                    if (tiles[pos].linksFree[0] 
+                        && tiles[pos+1].linksFree[0] 
+                        && tiles[pos-1].linksFree[0] 
+                        && tiles[pos-2].linksFree[0] 
+                        ) {
+                        if (tiles[pos].active + tiles[pos+1].active+
+                        tiles[pos+2].active + tiles[pos-1].active
+                        + tiles[pos-2].active != 4) return false;
+                    } else return false;
+                    break;
+                case 1: 
+                    if (tiles[pos].linksFree[1] 
+                        && tiles[pos+16].linksFree[1] 
+                        && tiles[pos-16].linksFree[1] 
+                        && tiles[pos-32].linksFree[1] 
+                        ) {
+                        if (tiles[pos].active + tiles[pos+16].active+
+                        tiles[pos+32].active + tiles[pos-16].active
+                        + tiles[pos-32].active != 4) return false;                            
+                    } else return false;
+                    break;
+                case 2: 
+                    if (tiles[pos].linksFree[2] 
+                        && tiles[pos+17].linksFree[2] 
+                        && tiles[pos-17].linksFree[2] 
+                        && tiles[pos-34].linksFree[2] 
+                        ) {
+                        if (tiles[pos].active + tiles[pos+17].active+
+                            tiles[pos+34].active + tiles[pos-17].active
+                        + tiles[pos-34].active != 4) return false;                            
+                    } else return false;
+                    break;
+                case 3:
+                    if (tiles[pos].linksFree[3] 
+                        && tiles[pos+15].linksFree[3] 
+                        && tiles[pos-15].linksFree[3] 
+                        && tiles[pos-30].linksFree[3] 
+                        ) {
+                        if (tiles[pos].active + tiles[pos+15].active+
+                        tiles[pos+30].active + tiles[pos-15].active
+                        + tiles[pos-30].active != 4) return false;                            
+                    } else return false;
+                    break;
+                default: 
+                    return false;
+                    break;
+            }
+            return true;
+
+        }
+
+        function moveCursorToPosition(position) {
+            const targetSquare = document.querySelector(`.square[id="${position}"]`);
+            const rect = targetSquare.getBoundingClientRect();
+            const boardRect = board.getBoundingClientRect();
+            
+            const x = rect.left - boardRect.left;
+            const y = rect.top - boardRect.top;
+
+            moves[0].x = position%16;
+            moves[0].y = position>>4;
+            if (validMove(moves[0].x + moves[0].y * 16, moves[0].r)) {
+                    cursor.className = 'cursor ready';
+            } else {
+                cursor.className = 'cursor searching';
+            }
+            
+            cursor.style.transform = `translate(${x}px, ${y}px)`;
+        }
+
+        function executeMove() {
+
+            // check
+            pos = moves[0].x + moves[0].y*16;
+            if (!validMove(pos, moves[0].r)) {
+                return;
+            }
+
+            // update board
+            switch (moves[0].r) {
+                case 0: 
+                    tiles[pos].linksFree[0] = false;
+                    tiles[pos+1].linksFree[0] = false;
+                    tiles[pos-1].linksFree[0] = false;
+                    tiles[pos-2].linksFree[0] = false;
+                    tiles[pos].active = 1;
+                    tiles[pos+1].active = 1;
+                    tiles[pos+2].active = 1;
+                    tiles[pos-1].active = 1;
+                    tiles[pos-2].active  = 1;
+                    break;
+                case 1: 
+                    tiles[pos].linksFree[1] = false;
+                    tiles[pos+16].linksFree[1] = false;
+                    tiles[pos-16].linksFree[1] = false;
+                    tiles[pos-32].linksFree[1] = false;
+                    tiles[pos].active = 1;
+                    tiles[pos+16].active = 1;
+                    tiles[pos+32].active = 1;
+                    tiles[pos-16].active = 1;
+                    tiles[pos-32].active  = 1;
+                    break;
+                case 2: 
+                    tiles[pos].linksFree[2] = false;
+                    tiles[pos+17].linksFree[2] = false;
+                    tiles[pos-17].linksFree[2] = false;
+                    tiles[pos-34].linksFree[2] = false;
+                    tiles[pos].active = 1;
+                    tiles[pos+17].active = 1;
+                    tiles[pos+34].active = 1;
+                    tiles[pos-17].active = 1;
+                    tiles[pos-34].active  = 1;
+                    break;
+                case 3:
+                    tiles[pos].linksFree[3] = false;
+                    tiles[pos+15].linksFree[3] = false;
+                    tiles[pos-15].linksFree[3] = false;
+                    tiles[pos-30].linksFree[3] = false;
+                    tiles[pos].active = 1;
+                    tiles[pos+15].active = 1;
+                    tiles[pos+30].active = 1;
+                    tiles[pos-15].active = 1;
+                    tiles[pos-30].active  = 1;
+                    break;
+                default: 
+                    return false;
+                    break;
+            }
+
+            // add element to show line
+            const targetSquare = document.querySelector(`.square[id="${pos}"]`);
+            line = document.createElement('div');
+            // line.className = 'move';
+            line.setAttribute("move"+pos,pos);
+            rot = 0; xd = 0; yd = 0;
+            switch (moves[0].r) {
+                    case 0: //rot = "0"; break; yd = -84; xd = -6 ;
+                    line.className = 'move right';break;
+                    case 1: //rot = "90"; break;yd = -84; xd = -6 ; break;
+                    line.className = 'move down';break;
+                    case 2: //rot = "45"; break;yd = -84; xd = -6 ; break;
+                    line.className = 'move falling';break;
+                    case 3: //rot = "-45";break; yd = -84; xd = -6 ; break;
+                    line.className = 'move ascending';break;
+                    default: break;
+            }
+            targetSquare.appendChild(line);
+
+            cursor.className = 'cursor searching';
+        }
+
+        function refreshBoard() {
+            for (let i = 0 ; i < 256; i++) {
+                const targetSquare = document.querySelector(`.square[id="${i}"]`);
+                pot = potentialMove(i);
+
+                if (tiles[i].active>0) {
+                    if (pot)
+                    targetSquare.className = 'square activepot';
+                    else 
+                    targetSquare.className = 'square active';
+                } else {
+                    if (pot)
+                    targetSquare.className = 'square pot';
+                    else 
+                    targetSquare.className = 'square';
+                }
+            }   
+        }
+    </script>
+</body>
+</html>
